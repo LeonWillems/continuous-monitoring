@@ -15,6 +15,7 @@ def check_radius(pairwise_distances, k: int, z: int, r: float) -> bool:
     # We keep track of the number of points covered, and indicate which ones
     num_points_covered = 0
     points_covered = np.zeros(pairwise_distances.shape[0], dtype=np.int8)
+    centerpoints = []
 
     # TODO: vectorize some more and implement sparse matrices. n*n can be huge
     # Create two matrices that indicate which points are covered by what disks (disk i covers point j)
@@ -28,6 +29,7 @@ def check_radius(pairwise_distances, k: int, z: int, r: float) -> bool:
     for _ in range(k):
         # Get the heaviest disk from G, thus containing most uncovered points
         heaviest_disk_index = G.sum(axis=1).argmax()
+        centerpoints.append(heaviest_disk_index)
         # Get indices of points that are covered by disk in E corresponding to heaviest disk in G
         expanded_disk_points_indices = np.where(E[heaviest_disk_index] == 1)[0]
 
@@ -46,10 +48,10 @@ def greedy(P: np.ndarray, k: int, z: int) -> float:
     """A binary search implementation to look for the lowest pairwise
     distance that yields a 3*OPT cost (radius)
 
-    :param P: dataset, ndarray
+    :param P: dataset, np.ndarray
     :param k: #clusters
     :param z: #outliers
-    :return: 3*OPT cost (radius) for this dataset
+    :return: radius and centerpoint indices (3*OPT cost solution for this dataset)
     """
     pairwise_distances = distance_matrix(P, P)
     # Get all sorted unique distances but disregard the distance 0
@@ -64,7 +66,8 @@ def greedy(P: np.ndarray, k: int, z: int) -> float:
         mid = low + (high - low) // 2
 
         # If the radius does not work, it's too low
-        if not check_radius(pairwise_distances, k, z, unique_distances[mid]):
+        radius_works, centerpoints = check_radius(pairwise_distances, k, z, unique_distances[mid])
+        if not radius_works:
             low = mid + 1
 
         # If it does work, it might be too high, so we need to check lower
@@ -72,14 +75,24 @@ def greedy(P: np.ndarray, k: int, z: int) -> float:
             high = mid - 1
             if unique_distances[mid] <= lowest_working_radius:
                 lowest_working_radius = unique_distances[mid]
+                working_centerpoints = centerpoints
 
     # The algorithm actually shows that 3 times the lowest working radius is the cost of the solution
     # Hence, we need to use that value
-    return 3*lowest_working_radius
+    return 3*lowest_working_radius, working_centerpoints
 
 
 def mbc_construction(P, k, z, eps, weights=None):
-    r = greedy(P, k, z)
+    """Constructs an (eps,k,z)-mini-ball covering.
+
+    :param P:
+    :param k:
+    :param z:
+    :param eps:
+    :param weights:
+    :return:
+    """
+    r, _ = greedy(P, k, z)
     # TODO: we actually never need P, just the pairwise distance matrix. Fix
     pairwise_distances = distance_matrix(P, P)
     # Keep track of which points are still included in P
