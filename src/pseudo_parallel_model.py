@@ -1,15 +1,15 @@
 import numpy as np
 from scipy.spatial import distance_matrix
 
-def check_radius(pairwise_distances, k: int, z: int, r: float) -> bool:
+def check_radius(pairwise_distances, k: int, z: int, r: float):
     """Will check greedily whether n-z points can be covered in disks
     of radius 3*r, thus at most 3*OPT.
 
-    :param pairwise_distances: between all pairs in the original dataset
+    :param pairwise_distances: between all pairs in the original dataset (np.ndarray((n,n))
     :param k: #clusters
     :param z: #outliers
     :param r: radius to check
-    :return: boolean indicating whether n-z points can be covered
+    :return: boolean indicating whether n-z points can be covered, np.ndarray of the selected centerpoints
     """
 
     # We keep track of the number of points covered, and indicate which ones
@@ -44,7 +44,7 @@ def check_radius(pairwise_distances, k: int, z: int, r: float) -> bool:
     return num_points_covered >= pairwise_distances.shape[0] - z, np.array(centerpoints)
 
 
-def greedy(P: np.ndarray, k: int, z: int) -> float:
+def greedy(P: np.ndarray, k: int, z: int):
     """A binary search implementation to look for the lowest pairwise
     distance that yields a 3*OPT cost (radius)
 
@@ -85,11 +85,11 @@ def greedy(P: np.ndarray, k: int, z: int) -> float:
 def mbc_construction(P, k, z, eps, weights=None):
     """Constructs an (eps,k,z)-mini-ball covering.
 
-    :param P:
-    :param k:
-    :param z:
-    :param eps:
-    :param weights:
+    :param P: dataset, np.ndarray
+    :param k: #clusters
+    :param z: #outliers
+    :param eps: error term
+    :param weights: numpy error with a weight for each point in P
     :return:
     """
     r, _ = greedy(P, k, z)
@@ -118,20 +118,43 @@ def mbc_construction(P, k, z, eps, weights=None):
     return weights
 
 
-def two_round_coreset(P, eps, k, z, m):
+def two_round_coreset(P, k, z, eps, m):
+    """Deterministic two-round algorithms to compute an (eps,k,z)-coreset of P.
+    For now, just a placeholder for the actual parallel algorithm.
+
+    :param P: dataset, np.ndarray
+    :param k: #clusters
+    :param z: #outliers
+    :param eps: error term
+    :param m: #machines
+    :return: coreset P_star, numpy array for weights of P_star, radius for the coreset balls
+    """
     dataset_indices = np.arange(P.shape[0])
     np.random.shuffle(dataset_indices)
     P_split = np.array_split(dataset_indices, m)
 
     def round_one(P, P_split, k, z, m):
+        """Find, per machine, a radius for each power of two as value for z
+
+        :param P_split: a (random) split of the original dataset over m machines, containing indices
+        :return: np.ndarray R of size (m, ceil(log_2(z+1))+1) containing radii
+        """
         R = np.zeros((m, int(np.ceil(np.log2(z + 1))) + 1))
         for M_i in range(m):
+            P_i = P[P_split[M_i]]
             for j in range(R.shape[1]):
-                P_i = P[P_split[M_i]]
-                R[M_i][j] = greedy(P_i, k, 2 ** j - 1)
+                R[M_i][j] = greedy(P_i, k, 2 ** j - 1)[0]
         return R
 
     def round_two(P, P_split, R, k, z, m):
+        """Each machine will first determine the optimal radius for all given splits, yielding
+        one final value that each one uses. Then, each machine constructs a coreset on its split.
+        All these coresets, together with the one radius, will be returned.
+
+        :param R: np.ndarray from round_one()
+        :return: P_i_stars (list of coresets (of np.ndarray)), r_hat (float)
+        """
+        r_hat = np.inf
         for r in np.unique(R):
             min_j_arr = np.argmax(R <= r, axis=1)
             if np.sum(2 ** min_j_arr - 1) <= z:
@@ -147,6 +170,12 @@ def two_round_coreset(P, eps, k, z, m):
         return P_i_stars, r_hat
 
     def coordinator(P, P_split, P_i_stars, m):
+        """Collects all coresets from the m machines, takes their union, and
+        creates a final mini-ball covering being an (eps,k,z)-coreset.
+
+        :param P_i_stars:
+        :return: P_star (np.ndarray), final_weights (np array)
+        """
         union_of_weights = np.zeros(P.shape[0], dtype=np.int8)
 
         for M_i in range(m):
@@ -165,5 +194,5 @@ def two_round_coreset(P, eps, k, z, m):
     P_i_stars, r_hat = round_two(P, P_split, R, k, z, m)
     P_star, final_weights = coordinator(P, P_split, P_i_stars, m)
 
-    return P_star, final_weights, r_hat
+    return P_star, final_weights, r_hat/3
 

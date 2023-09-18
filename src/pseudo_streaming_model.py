@@ -1,10 +1,13 @@
+import numpy as np
+from scipy.spatial import distance_matrix
+
 def update_coreset(Q, weights, delta):
     """Constructs an (eps,k,z)-mini-ball covering.
 
-    :param Q:
-    :param weights:
-    :param delta:
-    :return:
+    :param Q: dataset of the type np.ndarray
+    :param weights: np array with a weight for each sample in Q
+    :param delta: radius (float)
+    :return: updated coreset Q_star (now of list type, as need for the outer function), and updated weights (also a list)
     """
     pairwise_distances = distance_matrix(Q, Q)
 
@@ -44,7 +47,7 @@ def insertion_only_streaming(P, k, z, eps):
     :param k: #clusters
     :param z: #outliers
     :param eps: error term
-    :return: P_star (point), weights (together an (eps,k,z)-mini-ball covering), r (radius)
+    :return: P_star (np.ndarray), weights (together an (eps,k,z)-mini-ball covering), r (radius, float)
     """
     r, P_star, weights, d = 0, [], [], P.shape[1]
 
@@ -65,12 +68,11 @@ def insertion_only_streaming(P, k, z, eps):
 
         if r == 0 and len(P_star) >= k+z+1:
             minimum_distance = np.inf
-            for q_i in P_star:
-                for q_j in P_star:
-                    # TODO: optimize so that we don't have double checks
+            for i, q_i in enumerate(P_star[:-1]):
+                for q_j in P_star[i+1:]:
                     if dist(q_i, q_j) <= minimum_distance and not np.array_equal(q_i, q_j):
                         minimum_distance = dist(q_i, q_j)
-                        r = minimum_distance/2
+            r = minimum_distance/2
 
         # TODO: change back to c = 16 for actual algorithm
         c = 1.4
@@ -78,4 +80,4 @@ def insertion_only_streaming(P, k, z, eps):
             r = 2*r
             P_star, weights = update_coreset(np.array(P_star), np.array(weights), eps/2*r)
 
-    return np.array(P_star), np.array(weights), r
+    return np.array(P_star), np.array(weights), r/2
