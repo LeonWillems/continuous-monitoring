@@ -1,4 +1,5 @@
 import numpy as np
+from src.utils import *
 from scipy.spatial import distance_matrix
 
 def check_radius(pairwise_distances, k: int, z: int, r: float):
@@ -93,7 +94,6 @@ def mbc_construction(P, k, z, eps, weights=None):
     :return:
     """
     r, _ = greedy(P, k, z)
-    # TODO: we actually never need P, just the pairwise distance matrix. Fix
     pairwise_distances = distance_matrix(P, P)
     # Keep track of which points are still included in P
     P_included = np.ones(pairwise_distances.shape[0], dtype=np.int8)
@@ -129,9 +129,7 @@ def two_round_coreset(P, k, z, eps, m):
     :param m: #machines
     :return: coreset P_star, numpy array for weights of P_star, radius for the coreset balls
     """
-    dataset_indices = np.arange(P.shape[0])
-    np.random.shuffle(dataset_indices)
-    P_split = np.array_split(dataset_indices, m)
+    P_split, _ = split_data(P, m)
 
     def round_one(P, P_split, k, z, m):
         """Find, per machine, a radius for each power of two as value for z

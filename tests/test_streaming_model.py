@@ -1,10 +1,10 @@
 import unittest
-from src.pseudo_streaming_model import *
+from src.streaming_model import *
 from src.dataset import Dataset
 from scipy.spatial import distance_matrix
 
 
-class TestPseudoStreamingModel(unittest.TestCase):
+class TestStreamingModel(unittest.TestCase):
     def setUp(self):
         self.n, self.k, self.z, self.eps, self.m = 100, 10, 10, 1, 1
         self.toy_example = Dataset(n=self.n, k=self.k, z=self.z, eps=self.eps, m=self.m)
