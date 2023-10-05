@@ -34,22 +34,33 @@ def update_coreset(Q, weights, delta):
 
     return list(Q_star), list(weights)
 
-
-def insertion_only_streaming(P, k, z, eps):
+def insertion_only_streaming(P, k, z, eps, P_star=[], weights=[], r=0):
     """Mock version of the streaming model that does not implement streaming yet.
     For now, we use the dataset as is.
 
     Note that due to the dynamic fashion of streams, we use lists instead of np.ndarrays.
     Lists are better for appending, while still not extremely efficient. For updating the coreset,
-    we will convert back to np.ndarrays, for easier indexing and other operations.
+    we will convert back to np.ndarray instances, for easier indexing and other operations.
 
-    :param P: dataset, np.ndarray
+    Optional: delivering an already existing coreset, which will be updated when invoking
+    this function. Needed for coreset: P_star, weights and radius
+
+    :param P: dataset; np.ndarray or list of data points
     :param k: #clusters
     :param z: #outliers
     :param eps: error term
+    :param P_star: coreset; np.ndarray or list of data points
+    :param weights: weights, np.ndarray or list of weights
+    :param r: radius of miniballs from the (eps,k,z)-covering (float)
     :return: P_star (np.ndarray), weights (together an (eps,k,z)-mini-ball covering), r (radius, float)
     """
-    r, P_star, weights, d = 0, [], [], P.shape[1]
+    if type(P_star) != list:
+        P_star = list(P_star)
+
+    if type(weights) != list:
+        weights = list(weights)
+
+    d = P.shape[1]
 
     def dist(p, q):
         return np.linalg.norm(p - q)
@@ -57,15 +68,19 @@ def insertion_only_streaming(P, k, z, eps):
     for p_t in P:
         q_in_neighborhood = False
         for i, q in enumerate(P_star):
+            # If there's another point q within distance, it becomes the representative of p_t
             if dist(p_t, q) <= eps/2*r:
                 weights[i] += 1
                 q_in_neighborhood = True
                 break
 
+        # If there's no point within distance, p_t will be added to the coreset
         if not q_in_neighborhood:
             P_star.append(p_t)
             weights.append(1)
 
+        # If the coreset size becomes at least k+z+1 for the first time, let the
+        # radius be half of the shortest distance between two points of the coreset
         if r == 0 and len(P_star) >= k+z+1:
             minimum_distance = np.inf
             for i, q_i in enumerate(P_star[:-1]):
@@ -74,6 +89,7 @@ def insertion_only_streaming(P, k, z, eps):
                         minimum_distance = dist(q_i, q_j)
             r = minimum_distance/2
 
+        # If the coreset size exceeds the limit we impose on it, update the coreset
         # TODO: change back to c = 16 for actual algorithm
         c = 1.4
         while len(P_star) >= k*(c/eps)**d + z:

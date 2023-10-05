@@ -2,26 +2,33 @@ import numpy as np
 from src.utils import *
 from scipy.spatial import distance_matrix
 
-def check_radius(pairwise_distances, k: int, z: int, r: float):
+def check_radius(pairwise_distances, weights, k: int, z: int, r: float):
     """Will check greedily whether n-z points can be covered in disks
     of radius 3*r, thus at most 3*OPT.
 
     :param pairwise_distances: between all pairs in the original dataset (np.ndarray((n,n))
+    :param weights: np.array of weights for each data point
     :param k: #clusters
     :param z: #outliers
     :param r: radius to check
     :return: boolean indicating whether n-z points can be covered, np.ndarray of the selected centerpoints
     """
 
-    # We keep track of the number of points covered, and indicate which ones
-    num_points_covered = 0
-    points_covered = np.zeros(pairwise_distances.shape[0], dtype=np.int8)
+    # We keep track of the total weight of points covered, and indicate which ones
+    points_covered = np.zeros(weights.shape[0], dtype=np.int8)
+    weight_of_points_covered = 0
     centerpoints = []
 
     # TODO: vectorize some more and implement sparse matrices. n*n can be huge
-    # Create two matrices that indicate which points are covered by what disks (disk i covers point j)
-    G = (pairwise_distances <= r).astype(int)
-    E = (pairwise_distances <= 3 * r).astype(int)
+    # Create two matrices that indicate which points are covered (1 if so, 0 else)
+    # by what disks (disk i covers point j)
+    G_indicator = (pairwise_distances <= r).astype(int)
+    E_indicator = (pairwise_distances <= 3 * r).astype(int)
+
+    # Weighted versions; multiply point j by its weight
+    G = (weights * G_indicator.T).T
+    E = (weights * E_indicator.T).T
+
     # Remove the representative point from each disk
     np.fill_diagonal(G, 0)
     np.fill_diagonal(E, 0)
@@ -32,24 +39,25 @@ def check_radius(pairwise_distances, k: int, z: int, r: float):
         heaviest_disk_index = G.sum(axis=1).argmax()
         centerpoints.append(heaviest_disk_index)
         # Get indices of points that are covered by disk in E corresponding to heaviest disk in G
-        expanded_disk_points_indices = np.where(E[heaviest_disk_index] == 1)[0]
+        expanded_disk_points_indices = np.where(E[heaviest_disk_index] >= 1)[0]
 
-        # Update the number of points that are covered, and their indicator array
-        num_points_covered += len(expanded_disk_points_indices)
+        # Update the total weight of points that are covered, and their indicator array
+        weight_of_points_covered += sum(weights[expanded_disk_points_indices])
         points_covered[expanded_disk_points_indices] = 1
 
         # Remove all points that are now covered by a disk
         G[:, expanded_disk_points_indices] = 0
         E[:, expanded_disk_points_indices] = 0
 
-    return num_points_covered >= pairwise_distances.shape[0] - z, np.array(centerpoints)
+    return weight_of_points_covered >= sum(weights) - z, np.array(centerpoints)
 
 
-def greedy(P: np.ndarray, k: int, z: int):
+def greedy(P: np.ndarray, weights, k: int, z: int):
     """A binary search implementation to look for the lowest pairwise
     distance that yields a 3*OPT cost (radius)
 
     :param P: dataset, np.ndarray
+    :param weights: np.array of weights for each data point
     :param k: #clusters
     :param z: #outliers
     :return: radius and centerpoint indices (3*OPT cost solution for this dataset)
@@ -60,6 +68,7 @@ def greedy(P: np.ndarray, k: int, z: int):
 
     # Keep track of the lowest radius that gives a 3*OPT cost
     lowest_working_radius = np.inf
+    working_centerpoints = None
     # Index variable for Binary Search
     low, high = 0, unique_distances.shape[0]-1
 
@@ -67,7 +76,7 @@ def greedy(P: np.ndarray, k: int, z: int):
         mid = low + (high - low) // 2
 
         # If the radius does not work, it's too low
-        radius_works, centerpoints = check_radius(pairwise_distances, k, z, unique_distances[mid])
+        radius_works, centerpoints = check_radius(pairwise_distances, weights, k, z, unique_distances[mid])
         if not radius_works:
             low = mid + 1
 
@@ -83,23 +92,23 @@ def greedy(P: np.ndarray, k: int, z: int):
     return 3*lowest_working_radius, working_centerpoints
 
 
-def mbc_construction(P, k, z, eps, weights=None):
+def mbc_construction(P, weights, k, z, eps):
     """Constructs an (eps,k,z)-mini-ball covering.
 
     :param P: dataset, np.ndarray
+    :param weights: np.array of weights for each data point
     :param k: #clusters
     :param z: #outliers
     :param eps: error term
-    :param weights: numpy error with a weight for each point in P
-    :return:
+    :return: the final weights of the dataset; includes 0s, so dimensions are preserved
     """
-    r, _ = greedy(P, k, z)
+    r, _ = greedy(P, weights, k, z)
     pairwise_distances = distance_matrix(P, P)
     # Keep track of which points are still included in P
-    P_included = np.ones(pairwise_distances.shape[0], dtype=np.int8)
+    P_included = np.ones(P.shape[0], dtype=np.int8)
 
     if weights is None:
-        weights = np.ones(pairwise_distances.shape[0], dtype=np.int8)
+        weights = np.ones(P.shape[0], dtype=np.int8)
 
     # While there's still points included
     while P_included.sum() > 0:
@@ -118,7 +127,7 @@ def mbc_construction(P, k, z, eps, weights=None):
     return weights
 
 
-def two_round_coreset(P, k, z, eps, m):
+def two_round_coreset(P, k, z, eps, m, weights=None):
     """Deterministic two-round algorithms to compute an (eps,k,z)-coreset of P.
     For now, just a placeholder for the actual parallel algorithm.
 
@@ -127,34 +136,56 @@ def two_round_coreset(P, k, z, eps, m):
     :param z: #outliers
     :param eps: error term
     :param m: #machines
+    :param weights: np.array of weights for each data point, gets created if not available
     :return: coreset P_star, numpy array for weights of P_star, radius for the coreset balls
     """
-    P_split, _ = split_data(P, m)
+    if weights is None:
+        weights = np.ones(P.shape[0], dtype=np.int8)
 
-    def round_one(P, P_split, k, z, m):
+    P_split, _, weights_partitioned = split_data_evenly(P, m, weights)
+
+    def round_one(P, weights_partitioned, P_split, k, z, m):
         """Find, per machine, a radius for each power of two as value for z
 
+        :param P: the original dataset
+        :param weights_partitioned: list of np.arrays containing weights for each data point
         :param P_split: a (random) split of the original dataset over m machines, containing indices
         :return: np.ndarray R of size (m, ceil(log_2(z+1))+1) containing radii
         """
+        # Matrix R, containing V_i for each machine M_i
         R = np.zeros((m, int(np.ceil(np.log2(z + 1))) + 1))
+
         for M_i in range(m):
             P_i = P[P_split[M_i]]
+            weights_i = weights_partitioned[M_i]
+
             for j in range(R.shape[1]):
-                R[M_i][j] = greedy(P_i, k, 2 ** j - 1)[0]
+                R[M_i][j] = greedy(P_i, weights_i, k, 2**j - 1)[0]
         return R
 
-    def round_two(P, P_split, R, k, z, m):
+    def round_two(P, weights_partitioned, P_split, R, k, z, m):
         """Each machine will first determine the optimal radius for all given splits, yielding
         one final value that each one uses. Then, each machine constructs a coreset on its split.
         All these coresets, together with the one radius, will be returned.
 
-        :param R: np.ndarray from round_one()
+        :param P: the original dataset
+        :param weights_partitioned: list of np.arrays containing weights for each data point
+        :param P_split: a (random) split of the original dataset over m machines, containing indices
+        :param R: np.ndarray from round_one() containing radii
         :return: P_i_stars (list of coresets (of np.ndarray)), r_hat (float)
         """
         r_hat = np.inf
+        min_j_arr = np.ones(R.shape[0], dtype=np.int8) * R.shape[1]
+
         for r in np.unique(R):
-            min_j_arr = np.argmax(R <= r, axis=1)
+            # The original numpy-esque code was shit because np.argmax gives you 0 even though the
+            # value cannot be found :( Now this code is shit
+            for i, row in enumerate(R):
+                for j, element in enumerate(row):
+                    if element <= r:
+                        min_j_arr[i] = j
+                        break
+
             if np.sum(2 ** min_j_arr - 1) <= z:
                 r_hat = r
                 break
@@ -163,7 +194,8 @@ def two_round_coreset(P, k, z, eps, m):
         for M_i in range(m):
             j_i_hat = min_j_arr[M_i]
             P_i = P[P_split[M_i]]
-            P_i_star = mbc_construction(P_i, k, 2 ** j_i_hat, eps)
+            weights_i = weights_partitioned[M_i]
+            P_i_star = mbc_construction(P_i, weights_i, k, 2**j_i_hat, eps)
             P_i_stars.append(P_i_star)
         return P_i_stars, r_hat
 
@@ -171,7 +203,9 @@ def two_round_coreset(P, k, z, eps, m):
         """Collects all coresets from the m machines, takes their union, and
         creates a final mini-ball covering being an (eps,k,z)-coreset.
 
-        :param P_i_stars:
+        :param P: the original dataset
+        :param P_split: a (random) split of the original dataset over m machines, containing indices
+        :param P_i_stars: list of coresets (np.ndarrays) for the original dataset
         :return: P_star (np.ndarray), final_weights (np array)
         """
         union_of_weights = np.zeros(P.shape[0], dtype=np.int8)
@@ -182,15 +216,12 @@ def two_round_coreset(P, k, z, eps, m):
         P = P[union_of_weights > 0]
         union_of_weights = union_of_weights[union_of_weights > 0]
 
-        final_weights = mbc_construction(P, k, z, eps, union_of_weights)
+        final_weights = mbc_construction(P, union_of_weights, k, z, eps)
         P_star = P[final_weights > 0]
         final_weights = final_weights[final_weights > 0]
-
         return P_star, final_weights
 
-    R = round_one(P, P_split, k, z, m)
-    P_i_stars, r_hat = round_two(P, P_split, R, k, z, m)
+    R = round_one(P, weights_partitioned, P_split, k, z, m)
+    P_i_stars, r_hat = round_two(P, weights_partitioned, P_split, R, k, z, m)
     P_star, final_weights = coordinator(P, P_split, P_i_stars, m)
-
     return P_star, final_weights, r_hat/3
-
