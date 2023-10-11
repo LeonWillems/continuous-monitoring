@@ -1,6 +1,7 @@
 import unittest
 from src.parallel_model import *
 from src.dataset import Dataset
+from src.utils import *
 from scipy.spatial import distance_matrix
 
 
@@ -33,19 +34,39 @@ class TestParallelModel(unittest.TestCase):
         self.assertTrue(0 not in centerpoints)
 
     def test_mbc_construction(self):
-        weights = mbc_construction(self.P, self.weights, self.k, self.z, self.eps)
+        weights, _ = mbc_construction(self.P, self.weights, self.k, self.z, self.eps)
         self.assertIsInstance(weights, np.ndarray)
         self.assertEqual(self.n, len(weights))
         self.assertEqual(self.n, sum(weights))
 
-    def test_two_round_coreset(self):
-        P_star, final_weights, r_hat = two_round_coreset(self.P, self.k, self.z, self.eps, self.m, self.weights)
+    def test_coordinator_only_mbc(self):
+        new_weights = randomly_assign_weights(self.P, 0.4)
+        P_stars = self.P[new_weights > 0]
+        new_weights_filtered = new_weights[new_weights > 0]
+
+        P_star, final_weights, r_hat = (
+            coordinator_only_mbc(P_stars, new_weights_filtered, self.k, self.z, self.eps))
+
         self.assertIsInstance(P_star, np.ndarray)
         self.assertIsInstance(final_weights, np.ndarray)
         self.assertIsInstance(r_hat, float)
+
+        self.assertTrue(P_star.shape[0] <= P_stars.shape[0])
+        self.assertEqual(sum(new_weights), sum(final_weights))
+        self.assertEqual(sum(final_weights), self.n)
+        self.assertTrue(np.all(final_weights))
+
+    def test_two_round_coreset(self):
+        P_star, final_weights, r_hat = two_round_coreset(self.P, self.k, self.z, self.eps, self.m, self.weights)
+
+        self.assertIsInstance(P_star, np.ndarray)
+        self.assertIsInstance(final_weights, np.ndarray)
+        self.assertIsInstance(r_hat, float)
+
         self.assertEqual(P_star.shape[1], self.P.shape[1])
         self.assertEqual(P_star.shape[0], final_weights.shape[0])
         self.assertEqual(sum(final_weights), self.n)
+
         self.assertTrue(P_star.shape[0] <= self.P.shape[0])
         self.assertFalse(np.isinf(r_hat))
 

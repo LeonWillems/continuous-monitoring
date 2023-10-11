@@ -49,3 +49,45 @@ def split_data_randomly(P, m, weights=None):
         weights_partitioned = [weights[current_indices] for current_indices in P_indices_split]
 
     return P_indices_split, P_partitioned, weights_partitioned
+
+
+def randomly_assign_weights(P, proportion_to_keep):
+    """This function will simulate a poisson-random weight assignment to
+    a uniform-random selection of the original dataset. The number of points
+    to keep is determined by proportion_to_keep, which is a fraction, to be
+    multiplied by the total dataset size. Note that, due to randomness, it is
+    possible that less than the proportion actually gets a weight.
+
+    Suppose we have P with shape (50,2), and proportion_to_keep = 0.2,
+    a possible assignment is
+        [0, 0, 0, 0, 0, 0, 0, 6, 0, 0,
+         0, 0, 0, 0, 0, 0, 0, 0, 7, 4,
+         0, 8, 0, 0, 0, 0, 0, 0, 4, 0,
+         0, 3, 4, 0, 0, 0, 5, 0, 0, 0,
+         0, 0, 0, 0, 0, 0, 0, 3, 0, 6]
+
+    :param P: np.ndarray, dataset. Not necessary yet, n (#datapoints) would also suffice
+    :param proportion_to_keep: float, fraction of P.shape[0] to assign weights, rest will be 0
+    :return: np.ndarray(P.shape[0]), weight assignment, whose sum is P.shape[0]
+    """
+    n = P.shape[0]
+    # Number of weights to assign, the rest will be 0
+    number_of_weights = round(n * proportion_to_keep)
+
+    # Get a number between 0 and #weights-1, n times
+    # Ergo, each data point gets assignment to a representative
+    uniform_random_assignment = np.random.randint(0, number_of_weights, size=n, dtype=int)
+    # Count, for each representative, the number of points it's been assigned
+    unique, counts = np.unique(uniform_random_assignment, return_counts=True)
+    # Make sure each representative actually has a weight
+    all_counts = np.zeros(number_of_weights)
+    all_counts[unique] = counts
+
+    all_indices = np.arange(n)
+    # Get a random selection of the original data points as representatives
+    chosen_indices = np.random.choice(all_indices, size=number_of_weights, replace=False)
+
+    weights = np.zeros(n, dtype=int)
+    weights[chosen_indices] = all_counts
+
+    return weights

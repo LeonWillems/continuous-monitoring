@@ -13,6 +13,7 @@ class TestUtils(unittest.TestCase):
     def test_split_data_evenly(self):
         for m in [1, 2, 5, 10]:
             P_indices_split, P_partitioned, _ = split_data_evenly(self.P, m)
+
             self.assertEqual(m, len(P_indices_split))
             self.assertEqual(m, len(P_partitioned))
 
@@ -26,11 +27,24 @@ class TestUtils(unittest.TestCase):
     def test_split_data_randomly(self):
         for m in [1, 2, 5, 10]:
             P_indices_split, P_partitioned, _ = split_data_randomly(self.P, m)
+
             self.assertEqual(m, len(P_indices_split))
             self.assertEqual(m, len(P_partitioned))
 
             self.assertEqual(self.P.shape[0], sum([partition.shape[0] for partition in P_indices_split]))
             self.assertEqual(self.P.shape[0], sum([partition.shape[0] for partition in P_partitioned]))
+
+    def test_randomly_assign_weights(self):
+        for proportion_to_keep in [0.01, 0.03, 0.1]:
+            weights = randomly_assign_weights(self.P, proportion_to_keep)
+
+            self.assertEqual(self.P.shape[0], self.n)
+            self.assertEqual(self.n, weights.shape[0])
+            self.assertEqual(self.n, sum(weights))
+
+            number_of_nonzero_weights = sum(weights > 0)
+            self.assertTrue(number_of_nonzero_weights <= proportion_to_keep * self.n + 1)
+
 
 if __name__ == '__main__':
     unittest.main()

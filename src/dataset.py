@@ -4,6 +4,11 @@ from sklearn.datasets import make_blobs
 
 # User specific path in which datasets reside
 data_path = '../../Data/'
+
+def normalize(v):
+    norm = (v-np.min(v))/(np.max(v)-np.min(v))
+    return norm
+
 class Dataset:
     """Class to create or read in data. Contains methods to generate data, visualize data,
     and visualize clustering on top of the data.
@@ -39,7 +44,7 @@ class Dataset:
         self.y = y
         return P
 
-    def read_kdd(self, n_lines=4898431, columns=[0,1]):
+    def read_kdd(self, n_lines=4_898_431, columns=[0,1]):
         """Method to read in (part of the) KDD dataset. It contains 4_898_431 data points,
         which might be a bit much for testing purposes. The dataset has 11 columns ([0, ..., 10])
 
@@ -63,7 +68,7 @@ class Dataset:
         self.P = P
         return P
 
-    def read_sensor_stream(self, n_lines=1809467, columns=[0,1], k=58):
+    def read_sensor_stream(self, n_lines=1_809_467, columns=[0,1], k=58):
         """Method to read in (part of the) sensor_stream dataset. It contains 1_809_467
         data points. The dataset has 4 columns and 58 different classes.
 
@@ -84,6 +89,44 @@ class Dataset:
                 cleaned_line = line.strip().split(',')
                 cleaned_array = np.array(cleaned_line, dtype=float)
                 P[i] = cleaned_array[columns]
+
+        self.P = P
+        return P
+
+    def read_human_gait(self, lines_per_user=60_000, user=1, speeds=[0.6, 1.1, 1.6]):
+        """Method to read in (part of the) sensor_stream dataset. It contains 1_809_467
+        data points. The dataset has 4 columns and 58 different classes.
+
+        :param n_lines: lines to read from the KDD dataset
+        :param columns: columns to incorporate
+        :param k: number of clusters
+        :return: P, a dataset of the form np.ndarray((n,n_features))
+        """
+        n_lines = lines_per_user * len(speeds)
+        d = 6
+        P = np.zeros((n_lines, d), dtype=float)
+        gait_path = '/human_gait/data/'
+
+        self.n = n_lines*len(speeds)
+        self.k = len(speeds)
+        self.z = int(0.01*n_lines)
+        self.d = d
+
+        counter = 0
+        for speed in speeds:
+            data_file = f'GP{user}_{speed}_force.csv'
+
+            with open(data_path + gait_path + data_file) as data_reader:
+                data_reader.readline()
+
+                for _ in range(lines_per_user):
+                    line = data_reader.readline().strip()
+                    processed_line = np.array(line.split(',')).astype(float)
+                    P[counter] = processed_line
+                    counter += 1
+
+        for column_i in range(P.shape[1]):
+            P[:column_i] = normalize(P[:column_i] + 0.01)
 
         self.P = P
         return P

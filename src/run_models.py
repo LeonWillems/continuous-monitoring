@@ -5,18 +5,24 @@ from src.dataset import Dataset
 
 
 n = 5_000
-k = 5
-z = 50
+k = 6
+z = 100
 eps = 0.3
-m = 4
-T = 10
-t_stop = 6
+m = 3
+T = 5
+t_stop = 4
 
-model = 22
-# 0: MPC
+# Note that only 0: synthetic works with the below choice of model
+dataset = 0
+# 0: synthetic
+# 1: kdd
+# 2: sensor_stream
+
+model = 23
+# 0 : Two-round MPC
 # 11: Streaming
 # 12: Streaming with existing coreset
-# 21: Multiple Machines (vanilla)
+# 21: Multiple Machines Vanilla
 # 22: Continuous Monitoring
 # 23: On Demand Monitoring
 
@@ -56,7 +62,7 @@ def run():
         P_star, weights_list, r_hat = multiple_machines_vanilla(P, k, z, eps, m)
         toy_example.show_data_and_clusters(P_star, r_hat)
 
-        print(f'  Hypothesized size: {k*(12/eps)**2 + z}')
+        print(f'  Hypothesized size: {k * (12 / eps) ** 2 + z}')
         print(f'Actual coreset size: {P_star.shape[0]}')
 
     elif model == 22:
@@ -125,7 +131,17 @@ def run_sensor_stream():
 
 
 if __name__ == '__main__':
-    #run()
-    #run_kdd()
-    run_sensor_stream()
+    data = 0
+    # 0: synthetic
+    # 1: kdd
+    # 2: sensor_stream
+
+    if dataset == 0:
+        run()
+
+    elif dataset == 1:
+        run_kdd()
+
+    elif dataset == 2:
+        run_sensor_stream()
 

@@ -4,12 +4,27 @@ from utils import *
 
 from tqdm import tqdm
 
+"""
+If you find yourself in any situation where you need the actual two-round MPC model,
+instead of just an MBC construction, substitute
+    P_star, final_weights, final_radius = coordinator_only_mbc(
+        collected_coresets_from_streaming,
+        collected_weights_from_streaming,
+        k, z, eps)
+by
+    P_star, final_weights, final_radius = two_round_coreset(
+        collected_coresets_from_streaming,
+        k, z, eps, m,
+        collected_weights_from_streaming)
+(or with whatever parameters you need)
+"""
+
 def multiple_machines_vanilla(P, k, z, eps, m):
     """A toy example of how we combine the streaming and MPC models.
     Here, we partition the original dataset P into m even parts (+- 1 datapoint).
     We then let each machine act as if a partition comes in as a stream, where
     the machine keeps a coreset. If all the machines are done, they send their
-    coresets to the coordinator that constructs, in two rounds, its own coreset.
+    coresets to the coordinator that constructs its own coreset.
 
     :param P: dataset, np.ndarray
     :param k: #clusters
@@ -33,14 +48,14 @@ def multiple_machines_vanilla(P, k, z, eps, m):
         radii.append(radius)
 
     # Union all the coresets, and all their weights
-    collected_coreset_from_streaming = np.concatenate(coresets, axis=0)
+    collected_coresets_from_streaming = np.concatenate(coresets, axis=0)
     collected_weights_from_streaming = np.concatenate(weights_list, axis=0)
 
-    # Two-round communication MPC model
-    P_star, final_weights, final_radius = two_round_coreset(
-        collected_coreset_from_streaming,
-        k, z, eps, m,
-        collected_weights_from_streaming)
+    # Model where the coordinator invokes mbc_construction
+    P_star, final_weights, final_radius = coordinator_only_mbc(
+        collected_coresets_from_streaming,
+        collected_weights_from_streaming,
+        k, z, eps)
 
     return P_star, final_weights, final_radius
 
@@ -100,14 +115,14 @@ def continuous_monitoring(P, k, z, eps, m, T):
                 progress_bar.update(1)
 
             # Union all the intermediate coresets, and all their weights
-            collected_coreset_from_streaming = np.concatenate(coresets, axis=0)
+            collected_coresets_from_streaming = np.concatenate(coresets, axis=0)
             collected_weights_from_streaming = np.concatenate(weights_list, axis=0)
 
             # Two-round communication MPC model
-            P_star, final_weights, final_radius = two_round_coreset(
-                collected_coreset_from_streaming,
-                k, z, eps, m,
-                collected_weights_from_streaming)
+            P_star, final_weights, final_radius = coordinator_only_mbc(
+                collected_coresets_from_streaming,
+                collected_weights_from_streaming,
+                k, z, eps)
 
             # At the coordinator's results for the current timestep
             coordinator_coresets[t] = P_star
@@ -122,7 +137,7 @@ def on_demand_monitoring(P, k, z, eps, m, T, t_stop):
     The difference with continuous_monitoring is, that now we do not send
     these coresets to the coordinator after each timestep. We keep processing
     timesteps until the user requests for a coreset, after which the machines
-    send their coresets to the coordinator, which they performs its two-round
+    send their coresets to the coordinator, which then performs its two-round
     process to determine its final coreset.
 
     :param P: dataset, np.ndarray
@@ -171,13 +186,13 @@ def on_demand_monitoring(P, k, z, eps, m, T, t_stop):
                 break
 
     # Union all the intermediate coresets, and all their weights
-    collected_coreset_from_streaming = np.concatenate(coresets[:t+1], axis=0)
+    collected_coresets_from_streaming = np.concatenate(coresets[:t+1], axis=0)
     collected_weights_from_streaming = np.concatenate(weights_list[:t+1], axis=0)
 
     # Two-round communication MPC model, only invoked after t_stop
-    P_star, final_weights, final_radius = two_round_coreset(
-        collected_coreset_from_streaming,
-        k, z, eps, m,
-        collected_weights_from_streaming)
+    P_star, final_weights, final_radius = coordinator_only_mbc(
+        collected_coresets_from_streaming,
+        collected_weights_from_streaming,
+        k, z, eps)
 
     return P_timestamp_partitioned[:t+1], P_star, final_radius
