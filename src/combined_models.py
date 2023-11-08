@@ -86,7 +86,9 @@ def continuous_monitoring(P, k, z, eps, m, T):
     # Keep the most recent coresets, weights and radii for every machine
     coresets = [[] for _ in range(m)]
     weights_list = [[] for _ in range(m)]
-    radii = [0 for _ in range(m)]
+
+    # Keep track of all radii, including 0 for each machine as a start
+    all_radii = np.zeros((T+1,m))
 
     # Keep the coordinator's coreset and weights of every timestep
     coordinator_coresets = [[] for _ in range(T)]
@@ -106,12 +108,12 @@ def continuous_monitoring(P, k, z, eps, m, T):
                 P = P_t_machine_partitioned[machine]
 
                 P_star, weights, radius = insertion_only_streaming(
-                    P, k, z, eps, coresets[machine], weights_list[machine]
+                    P, k, z, eps, coresets[machine], weights_list[machine], all_radii[t][machine]
                 )
 
                 coresets[machine] = P_star
                 weights_list[machine] = weights
-                radii[machine] = radius
+                all_radii[t+1][machine] = radius
                 progress_bar.update(1)
 
             # Union all the intermediate coresets, and all their weights
@@ -157,7 +159,9 @@ def on_demand_monitoring(P, k, z, eps, m, T, t_stop):
     # Keep the most recent coresets, weights and radii for every machine
     coresets = [[] for _ in range(m)]
     weights_list = [[] for _ in range(m)]
-    radii = [0 for _ in range(m)]
+
+    # Keep track of all radii, including 0 for each machine as a start
+    all_radii = np.zeros((T+1,m))
 
     # Just a progress bar to show how far we are (#machine * #timesteps)
     with tqdm(total=m*T) as progress_bar:
@@ -173,12 +177,12 @@ def on_demand_monitoring(P, k, z, eps, m, T, t_stop):
                 P = P_t_machine_partitioned[machine]
 
                 P_star, weights, radius = insertion_only_streaming(
-                    P, k, z, eps, coresets[machine], weights_list[machine]
+                    P, k, z, eps, coresets[machine], weights_list[machine], all_radii[t][machine]
                 )
 
                 coresets[machine] = P_star
                 weights_list[machine] = weights
-                radii[machine] = radius
+                all_radii[t+1][machine] = radius
                 progress_bar.update(1)
 
             # Simulating an 'on demand' coreset request after timestep t_stop
@@ -196,3 +200,264 @@ def on_demand_monitoring(P, k, z, eps, m, T, t_stop):
         k, z, eps)
 
     return P_timestamp_partitioned[:t+1], P_star, final_radius
+
+
+def event_driven_monitoring(P, k, z, eps, m, T):
+    """First mock example of event driven monitoring. An 'event' is defined as a doubling
+    of the radius. Ergo, when in insertion_only_streaming() the radius gets doubled, an
+    event happens. The idea is that there might be many anomalies entering a machine at
+    a certain timestep, causing the coreset size to increase such that a doubling is needed.
+
+    :param P: dataset, np.ndarray
+    :param k: #clusters
+    :param z: #outliers
+    :param eps: error term
+    :param m: #machines
+    :param T: number of timesteps
+    :return: all_radii; the radii for all machines across all timesteps, to track the doublings
+    """
+    # Split up the data in T packets
+    _, P_timestamp_partitioned, _ = split_data_evenly(P, T)
+
+    # Keep the most recent coresets, weights and radii for every machine
+    coresets = [[] for _ in range(m)]
+    weights_list = [[] for _ in range(m)]
+
+    # Keep track of all radii, including 0 for each machine as a start
+    all_radii = np.zeros((T+1,m))
+
+    messages = []
+
+    # Just a progress bar to show how far we are (#machine * #timesteps)
+    with tqdm(total=m*T) as progress_bar:
+        # Process each timestep
+        for t in range(T):
+            P_t = P_timestamp_partitioned[t]
+            # Make a random split of the current packet. Machine 1 could receive
+            # 28 points, whereas machine 2 receives 5 points
+            _, P_t_machine_partitioned, _ = split_data_randomly(P_t, m)
+
+            # Each machine receives its data stream packet, and updates its coreset
+            for machine in range(m):
+                P = P_t_machine_partitioned[machine]
+
+                P_star, weights, radius = insertion_only_streaming(
+                    P, k, z, eps, coresets[machine], weights_list[machine], all_radii[t][machine]
+                )
+
+                if radius > all_radii[t][machine]:
+                    messages.append(f'Warning! Radius for machine {machine} doubled at time {t}')
+
+                coresets[machine] = P_star
+                weights_list[machine] = weights
+                all_radii[t+1][machine] = radius
+                progress_bar.update(1 )
+
+    for message in messages:
+        print(message)
+
+    return all_radii[1:,:]
+
+def add_or_create_ball(p, C, r):
+    ball_exists = False
+
+    for ball in C:
+        if point_in_ball(p, ball, r):
+            ball_exists = True
+            break
+
+    if not ball_exists:
+        C.append(p)
+
+    return C
+
+def distributed_greedy(P, k, m, toy_example):
+    _, P_partitioned, _ = split_data_evenly(P, m)
+
+    cluster_sets = [[] for _ in range(m)]
+    timestamps = len(P_partitioned[0])
+    new_clusters = []
+    r = 0
+    update_counter = 0
+    #r = find_minimum_distance(P)
+
+    for timestamp in range(timestamps):
+        invoke_gonzalez = False
+
+        for machine in range(m):
+            p = P_partitioned[machine][timestamp]
+            C = cluster_sets[machine]
+            C_updated = add_or_create_ball(p, C, r)
+            cluster_sets[machine] = C_updated
+
+            if len(C_updated) > k:
+                invoke_gonzalez = True
+
+        if invoke_gonzalez:
+            update_counter += 1
+
+            cluster_arrays = [
+                np.array(cluster_set) for cluster_set in cluster_sets
+            ]
+            cluster_matrix = np.concatenate(cluster_arrays, axis=0)
+
+            new_clusters, two_opt_r = two_opt_gonzalez(cluster_matrix, k)
+            r = two_opt_r + r
+
+            cluster_sets = [list(new_clusters) for _ in range(m)]
+
+            print(f'Clusters updated at time t = {timestamp}')
+            print(f'New r = {r}')
+            print()
+
+            subset = [partition[:timestamp] for partition in P_partitioned]
+            subset = np.concatenate(subset, axis=0)
+            toy_example.show_data_and_clusters(new_clusters, r, subset=subset)
+
+    return new_clusters, r, update_counter
+
+
+def updated_distributed_greedy(P, k, m, toy_example):
+    _, P_partitioned, _ = split_data_evenly(P, m)
+
+    cluster_sets = [[] for _ in range(m)]
+    timestamps = len(P_partitioned[0])
+    new_clusters = np.array([])
+    r = 0
+    update_counter = 0
+    to_visualize = []
+
+    gonzalez_done = False
+
+    for timestamp in range(timestamps):
+        for machine in range(m):
+            p = P_partitioned[machine][timestamp]
+            to_visualize.append(p)
+
+            C = cluster_sets[machine]
+            C_updated = add_or_create_ball(p, C, r)
+            #cluster_sets[machine] = C_updated
+
+            if len(C_updated) > k:
+                if not gonzalez_done:
+                    cluster_sets[machine] = C_updated
+
+                    cluster_arrays = [
+                        np.array(cluster_set) for cluster_set in cluster_sets
+                    ]
+                    cluster_matrix = np.concatenate(cluster_arrays, axis=0)
+
+                    new_clusters, r = two_opt_gonzalez(cluster_matrix, k)
+                    print(f'Gonzalez r: {r}')
+                    cluster_sets = [list(new_clusters) for _ in range(m)]
+                    gonzalez_done = True
+
+                else:
+                    distances_to_added_point = distance_matrix(C_updated[-1:], C_updated[:-1])
+                    minimum_distance_to_cluster = distances_to_added_point.min()
+
+                    if minimum_distance_to_cluster <= 2*r:
+                        r = minimum_distance_to_cluster
+                        print(f'min dist to cluster: {minimum_distance_to_cluster}')
+                        cluster_sets[machine] = C_updated[:-1]
+
+                    else:
+                        new_clusters, r_hat = opt_k_plus_one_clustering(np.array(C_updated))
+                        cluster_sets = [list(new_clusters) for _ in range(m)]
+                        r = r + r_hat
+                        print(f'r_hat = {r_hat}')
+
+                print(f'Clusters updated at time t = {timestamp}')
+                print(f'New r = {r}')
+                print()
+
+                update_counter += 1
+                toy_example.show_data_and_clusters(new_clusters, r, subset=np.array(to_visualize))
+
+    return new_clusters, r, update_counter
+
+
+def packet_distributed_greedy(P, k, m, T, toy_example):
+    # Split up the data in T packets
+    _, P_timestamp_partitioned, _ = split_data_evenly(P, T)
+
+    r = 0
+    cluster_sets = [[] for _ in range(m)]
+    to_visualize = []
+    new_clusters = np.array([])
+    initial_clustering = False
+    update_counter = 0
+
+    for t in range(T):
+        P_t = P_timestamp_partitioned[t]
+        # Make a random split of the current packet. Machine 1 could receive
+        # 28 points, whereas machine 2 receives 5 points
+        _, P_t_machine_partitioned, _ = split_data_randomly(P_t, m)
+
+        for machine in range(m):
+            P_t_i = P_t_machine_partitioned[machine]
+            C = cluster_sets[machine].copy()
+
+            for p in P_t_i:
+                to_visualize.append(p)
+                C = add_or_create_ball(p, C, r)
+
+            if len(C) > k:
+                if not initial_clustering:
+                    cluster_sets[machine] = C
+
+                    cluster_arrays = [
+                        np.array(cluster_set) if len(cluster_set) > 0
+                        else np.ndarray((0, P.shape[1]))
+                        for cluster_set in cluster_sets
+                    ]
+                    cluster_matrix = np.concatenate(cluster_arrays, axis=0)
+
+                    if k+1 <= len(cluster_matrix) <= 2*k:
+                        new_clusters, r = opt_two_times_k_clustering(cluster_matrix, k)
+
+                    else:
+                        new_clusters, r = two_opt_gonzalez(cluster_matrix, k)
+
+                    print(f'Gonzalez r: {r}')
+                    cluster_sets = [list(new_clusters) for _ in range(m)]
+                    initial_clustering = True
+
+                else:
+                    if len(C) == k+1:
+                        distances_to_added_point = distance_matrix(C[-1:], C[:-1])
+                        minimum_distance_to_cluster = distances_to_added_point.min()
+
+                        if minimum_distance_to_cluster <= 2 * r:
+                            r = minimum_distance_to_cluster
+                            print(f'min dist to cluster: {minimum_distance_to_cluster}')
+                            cluster_sets[machine] = C[:-1]
+
+                        else:
+                            new_clusters, r_hat = opt_k_plus_one_clustering(np.array(C))
+                            cluster_sets = [list(new_clusters) for _ in range(m)]
+                            r = r + r_hat
+                            print(f'r_hat = {r_hat}')
+
+                    elif k+1 < len(C) <= 2*k:
+                        new_clusters, r_hat = opt_two_times_k_clustering(np.array(C), k)
+                        cluster_sets = [list(new_clusters) for _ in range(m)]
+                        r = r + r_hat
+                        print(f'r_hat = {r_hat}')
+
+                    else:  # len(C) > 2k
+                        two_k_clusters, r_hat = two_opt_gonzalez(np.array(C), 2*k)
+                        new_clusters, r_hat = opt_two_times_k_clustering(two_k_clusters, k)
+                        r = r + r_hat
+
+                # hier volgens mij
+                print(f'Clusters updated at time {t} for machine {machine}')
+                print(f'New r = {r}')
+                print()
+
+                update_counter += 1
+                toy_example.show_data_and_clusters(new_clusters, r, subset=np.array(to_visualize))
+
+    print(f'Updated a total of {update_counter} times')
+
+    return new_clusters, r

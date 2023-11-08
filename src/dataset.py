@@ -1,3 +1,4 @@
+from src.utils import *
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.datasets import make_blobs
@@ -5,15 +6,11 @@ from sklearn.datasets import make_blobs
 # User specific path in which datasets reside
 data_path = '../../Data/'
 
-def normalize(v):
-    norm = (v-np.min(v))/(np.max(v)-np.min(v))
-    return norm
-
 class Dataset:
     """Class to create or read in data. Contains methods to generate data, visualize data,
     and visualize clustering on top of the data.
     """
-    def __init__(self, n=10_000, k=10, z=200, eps=1, m=3, d=2):
+    def __init__(self, n=10_000, k=10, z=200, eps=1, m=3, d=2, std=1):
         """
         :param n: #data points
         :param k: #clusters
@@ -28,6 +25,7 @@ class Dataset:
         self.eps = eps
         self.m = m
         self.d = d
+        self.std = std
 
     def generate_data(self, n_features=None):
         """Methods to generate data. Defines self.y to be the ground truth clustering, in case it's needed.
@@ -39,7 +37,9 @@ class Dataset:
             self.d = n_features
 
         # Very generic data generating method from scikit-learn. Does yield clearly separable clusters in many cases
-        P, y = make_blobs(n_samples=self.n, centers=self.k, cluster_std=1, n_features=self.d, random_state=5)
+        P, y = make_blobs(
+            n_samples=self.n, centers=self.k, cluster_std=self.std, n_features=self.d, random_state=5
+        )
         self.P = P
         self.y = y
         return P
@@ -150,7 +150,7 @@ class Dataset:
         plt.show()
         return
 
-    def show_data_and_clusters(self, centerpoints, radius_of_clusters, subset=None):
+    def show_data_and_clusters(self, centerpoints, radius_of_clusters, subset=None, labels=None):
         """Show the original dataset, plus highlights the centerpoints and their corresponding
         rings/balls. We usually visualize the whole dataset P, but it is possible that we only
         want to show an intermediate step, thus on a subset of the data.
@@ -158,6 +158,7 @@ class Dataset:
         :param centerpoints: np.ndarray format containing the points that are centerpoints
         :param radius_of_clusters: the final radius obtained
         :param subset: subset of P, a dataset (np.ndarray)
+        :param labels: a label for each centerpoint if needed
         :return:
         """
         fig, ax = plt.subplots(figsize=(15, 15))
@@ -167,12 +168,19 @@ class Dataset:
         else:
             plt.scatter(subset[:, 0], subset[:, 1], c='black', s=10)
 
-        plt.scatter(centerpoints[:, 0], centerpoints[:, 1], c='orange', s=10)
+        if labels is None:
+            plt.scatter(centerpoints[:, 0], centerpoints[:, 1], c='orange', s=10)
+        else:
+            plt.scatter(centerpoints[:, 0], centerpoints[:, 1], c='orange', s=10)
+
+            for i, txt in enumerate(labels):
+                ax.annotate(txt, (centerpoints[i, 0], centerpoints[i, 1]))
 
         for centerpoint in centerpoints:
             circle = plt.Circle(centerpoint, radius_of_clusters, fill=False, color='blue')
             ax.add_patch(circle)
 
         ax.set_aspect(1)
+        ax.set_title(f'r = {radius_of_clusters}')
         plt.show()
         return

@@ -96,4 +96,4 @@ def insertion_only_streaming(P, k, z, eps, P_star=[], weights=[], r=0):
             r = 2*r
             P_star, weights = update_coreset(np.array(P_star), np.array(weights), eps/2*r)
 
-    return np.array(P_star), np.array(weights), r/2
+    return np.array(P_star), np.array(weights), r

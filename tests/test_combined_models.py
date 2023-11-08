@@ -62,6 +62,18 @@ class TestCombinedModels(unittest.TestCase):
              ])
         self.assertTrue(np.abs(sum_of_partition_lengths - (self.t_stop/self.T)*self.n) <= 1)
 
+    def test_event_driven_monitoring(self):
+        all_radii = event_driven_monitoring(
+            self.P, self.k, self.z, self.eps, self.m, self.T
+        )
+
+        self.assertEqual(all_radii.shape[0], self.T)
+        self.assertEqual(all_radii.shape[1], self.m)
+
+        for machine in range(self.m):
+            for t in range(self.T - 1):
+                self.assertLessEqual(all_radii[t][machine], all_radii[t+1][machine])
+
 
 if __name__ == '__main__':
     unittest.main()

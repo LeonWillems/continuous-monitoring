@@ -1,4 +1,64 @@
 import numpy as np
+from scipy.spatial import distance_matrix
+
+
+def find_minimum_distance(P, get_point=False):
+    """Find the minimum distance between any two points in P. If get_point is True,
+    function will also return the index of one of the two corresponding points
+    where the distances is minimum.
+
+    :param P: dataset, np.ndarray()
+    :param get_point: bool, indicator whether we want one of the two points back
+    :return: distance, float
+    """
+    distances = distance_matrix(P, P)
+
+    if get_point:
+        flat_index = distances[distances > 0].argmin()
+        point_index = flat_index // (P.shape[0] - 1)
+        return distances[distances > 0].min(), point_index
+
+    else:
+        return distances[distances > 0].min()
+
+def find_maximum_distance(P):
+    """Find the maximum distance between any two points in P
+
+    :param P: dataset, np.ndarray()
+    :return: distance, float
+    """
+    distances = distance_matrix(P, P)
+    return distances.max()
+
+def calculate_sigma(P):
+    """sigma is the ratio between the maximum distance and minimum distance
+
+    :param P: dataset, np.ndarray()
+    :return: ratio, float
+    """
+    minimum_distance = find_minimum_distance(P)
+    maximum_distance = find_maximum_distance(P)
+    return maximum_distance/minimum_distance
+
+def point_in_ball(p, ball, radius):
+    """Determines whether a point lies in a ball with a given radius
+
+    :param p: point, np.ndarray
+    :param ball: centerpoint, np.ndarray
+    :param radius: radius of ball, float
+    :return: boolean
+    """
+    return np.linalg.norm(p - ball) <= radius
+
+def normalize(v):
+    """Normalizes vector v such that values will lie between
+    0 and 1 (both included)
+
+    :param v: values, np.array
+    :return: norm
+    """
+    norm = (v-np.min(v))/(np.max(v)-np.min(v))
+    return norm
 
 def split_data_evenly(P, m, weights=None):
     """Generates a partition of the whole datasets, divided into m partitions.

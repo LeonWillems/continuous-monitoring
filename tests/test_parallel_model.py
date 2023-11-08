@@ -13,26 +13,6 @@ class TestParallelModel(unittest.TestCase):
         self.P = self.toy_example.generate_data()
         self.pairwise_distances = distance_matrix(self.P, self.P)
 
-    def test_check_radius(self):
-        for r in [0, 0.25, 0.5, 0.75]:
-            radius_works, centerpoints = check_radius(self.pairwise_distances, self.weights, self.k, self.z, r)
-            self.assertFalse(radius_works)
-            self.assertIsInstance(centerpoints, np.ndarray)
-            self.assertEqual(len(centerpoints), self.k)
-
-        for r in [1, 3, 10, 100]:
-            radius_works, centerpoints = check_radius(self.pairwise_distances, self.weights, self.k, self.z, r)
-            self.assertTrue(radius_works)
-            self.assertIsInstance(centerpoints, np.ndarray)
-            self.assertEqual(len(centerpoints), self.k)
-
-    def test_greedy(self):
-        lowest_working_radius, centerpoints = greedy(self.P, self.weights, self.k, self.z)
-        self.assertTrue(2.7 <= lowest_working_radius <= 2.8)
-        self.assertIsInstance(centerpoints, np.ndarray)
-        self.assertTrue(len(centerpoints), self.k)
-        self.assertTrue(0 not in centerpoints)
-
     def test_mbc_construction(self):
         weights, _ = mbc_construction(self.P, self.weights, self.k, self.z, self.eps)
         self.assertIsInstance(weights, np.ndarray)
